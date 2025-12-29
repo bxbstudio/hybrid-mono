@@ -1,0 +1,8 @@
+{
+  "name": "HybridMono",
+  "references": [
+    "Unity.Entities",
+    "Unity.Burst",
+    "Unity.Collections"
+  ]
+}

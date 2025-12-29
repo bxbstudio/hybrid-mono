@@ -1,0 +1,10 @@
+{
+  "name": "dev.bxbstudio.hybrid-mono",
+  "displayName": "Hybrid Mono System",
+  "version": "1.0.0-experimental.1",
+  "unity": "2022.3",
+  "description": "Infrastructure for running ECS-style jobs and data on GameObjects",
+  "dependencies": {
+    "com.unity.entities": "1.3.8"
+  }
+}
