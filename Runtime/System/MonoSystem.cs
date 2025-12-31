@@ -1,37 +1,54 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Jobs;
 using Unity.Profiling;
 using UnityEngine;
 
 namespace Utilities.HybridMono
 {
     /// <summary>
-    /// Base class for custom systems that run on MonoBehaviours, providing life-cycle hooks and job execution.
+    /// Base class for custom systems that process Entities in the HybridMono World.
+    /// Provides life-cycle hooks and job execution support.
     /// </summary>
     public abstract class MonoSystem : PersistentSingleton<MonoSystem>
     {
-        /// <summary>
-        /// Profiler marker for the Update loop.
-        /// </summary>
+        #region Profiler Markers
         private static readonly ProfilerMarker UpdateMarker =
-                  new ProfilerMarker($"{nameof(MonoSystem)}.Update");
+            new ProfilerMarker($"{nameof(MonoSystem)}.Update");
 
-        /// <summary>
-        /// Profiler marker for the FixedUpdate loop.
-        /// </summary>
         private static readonly ProfilerMarker FixedUpdateMarker =
             new ProfilerMarker($"{nameof(MonoSystem)}.FixedUpdate");
 
+        private static readonly ProfilerMarker LateUpdateMarker =
+            new ProfilerMarker($"{nameof(MonoSystem)}.LateUpdate");
+        #endregion
+
+        #region Properties
         /// <summary>
-        /// Profiler marker for the LateUpdate loop.
+        /// Gets the HybridMono World.
         /// </summary>
-           private static readonly ProfilerMarker LateUpdateMarker =
-            new ProfilerMarker($"{nameof(MonoSystem)}.LateUpdate");   
+        protected World World => MonoHybridAPI.World;
 
         /// <summary>
-        /// Standard Unity Update message. Calls <see cref="OnUpdate"/>.
+        /// Gets the EntityManager for the HybridMono World.
         /// </summary>
+        protected EntityManager EntityManager => MonoHybridAPI.EntityManager;
+
+        /// <summary>
+        /// Dependency handle for job scheduling.
+        /// Systems should update this when scheduling jobs.
+        /// </summary>
+        protected JobHandle Dependency { get; set; }
+        #endregion
+
+        #region Unity Lifecycle
+        protected override void Awake()
+        {
+            base.Awake();
+            OnCreate();
+        }
+
         protected virtual void Update()
         {
             using (UpdateMarker.Auto())
@@ -40,9 +57,6 @@ namespace Utilities.HybridMono
             }
         }
 
-        /// <summary>
-        /// Standard Unity FixedUpdate message. Calls <see cref="OnFixedUpdate"/>.
-        /// </summary>
         protected virtual void FixedUpdate()
         {
             using (FixedUpdateMarker.Auto())
@@ -51,9 +65,6 @@ namespace Utilities.HybridMono
             }
         }
 
-        /// <summary>
-        /// Standard Unity LateUpdate message. Calls <see cref="OnLateUpdate"/>.
-        /// </summary>
         protected virtual void LateUpdate()
         {
             using (LateUpdateMarker.Auto())
@@ -62,53 +73,108 @@ namespace Utilities.HybridMono
             }
         }
 
-        /// <summary>
-        /// Standard Unity OnDestroy message. Calls <see cref="OnCleanup"/>.
-        /// </summary>
         protected virtual void OnDestroy()
         {
             OnCleanup();
         }
+        #endregion
 
-
+        #region System Lifecycle (Override These)
+        /// <summary>
+        /// Called when the system is created (during Awake).
+        /// Use for initialization, creating queries, etc.
+        /// </summary>
+        protected virtual void OnCreate() { }
 
         /// <summary>
-        /// Overridable method for custom update logic.
+        /// Called every frame during Update.
         /// </summary>
         protected virtual void OnUpdate() { }
+
         /// <summary>
-        /// Overridable method for custom fixed update logic.
+        /// Called every fixed timestep during FixedUpdate.
         /// </summary>
         protected virtual void OnFixedUpdate() { }
 
         /// <summary>
-        /// Overridable method for custom late update logic.
+        /// Called every frame after Update during LateUpdate.
         /// </summary>
         protected virtual void OnLateUpdate() { }
+
         /// <summary>
-        /// Overridable method for custom cleanup logic when the system is destroyed.
+        /// Called when the system is destroyed.
         /// </summary>
         protected virtual void OnCleanup() { }
+        #endregion
 
+        #region GameObject Component Access
+        /// <summary>
+        /// Gets component data via GameObject reference.
+        /// </summary>
+        /// <typeparam name="T">The component type.</typeparam>
+        /// <param name="gameObject">The GameObject.</param>
+        /// <returns>The component data.</returns>
+        protected T GetComponent<T>(GameObject gameObject) where T : unmanaged, IComponentData
+        {
+            return MonoHybridAPI.GetComponentData<T>(gameObject);
+        }
+
+        /// <summary>
+        /// Sets component data via GameObject reference.
+        /// </summary>
+        /// <typeparam name="T">The component type.</typeparam>
+        /// <param name="gameObject">The GameObject.</param>
+        /// <param name="data">The component data.</param>
+        protected void SetComponent<T>(GameObject gameObject, T data) where T : unmanaged, IComponentData
+        {
+            MonoHybridAPI.SetComponentData(gameObject, data);
+        }
+
+        /// <summary>
+        /// Checks if a GameObject's Entity has a component.
+        /// </summary>
+        /// <typeparam name="T">The component type.</typeparam>
+        /// <param name="gameObject">The GameObject.</param>
+        /// <returns>True if the component exists.</returns>
+        protected bool HasComponent<T>(GameObject gameObject) where T : unmanaged, IComponentData
+        {
+            return MonoHybridAPI.HasComponent<T>(gameObject);
+        }
+
+        /// <summary>
+        /// Gets a buffer via GameObject reference.
+        /// </summary>
+        /// <typeparam name="T">The buffer element type.</typeparam>
+        /// <param name="gameObject">The GameObject.</param>
+        /// <returns>The DynamicBuffer.</returns>
+        protected DynamicBuffer<T> GetBuffer<T>(GameObject gameObject) where T : unmanaged, IBufferElementData
+        {
+            return MonoHybridAPI.GetBuffer<T>(gameObject);
+        }
+
+        /// <summary>
+        /// Checks if a GameObject's Entity has a buffer.
+        /// </summary>
+        /// <typeparam name="T">The buffer element type.</typeparam>
+        /// <param name="gameObject">The GameObject.</param>
+        /// <returns>True if the buffer exists.</returns>
+        protected bool HasBuffer<T>(GameObject gameObject) where T : unmanaged, IBufferElementData
+        {
+            return MonoHybridAPI.HasBuffer<T>(gameObject);
+        }
+        #endregion
+
+        #region Deprecated API
         /// <summary>
         /// Finds all MonoBehaviours of type T in the scene.
         /// </summary>
         /// <typeparam name="T">The type of MonoBehaviour to find.</typeparam>
         /// <returns>An array of found MonoBehaviours.</returns>
-         protected virtual T[] FindMonoComponents<T>() where T : MonoBehaviour
+        [Obsolete("Use EntityQuery and component queries instead. This method will be removed in a future version.")]
+        protected virtual T[] FindMonoComponents<T>() where T : MonoBehaviour
         {
             return FindObjectsOfType<T>();
         }
-        /// <summary>
-        /// Runs a MonoJob for a specified number of elements.
-        /// </summary>
-        /// <typeparam name="TJob">The type of the job.</typeparam>
-        /// <param name="job">The job instance.</param>
-        /// <param name="length">The number of times to execute the job.</param>
-      protected void RunMonoJob<TJob>(TJob job, int length) where TJob : struct, IMonoJob
-        {
-            job.Run(length);
-        }
-
+        #endregion
     }
 }

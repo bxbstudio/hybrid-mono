@@ -1,263 +1,209 @@
-using UnityEngine;
-using UnityEngine.SceneManagement;
 using System;
-using System.Linq;
 using System.Reflection;
 using System.Collections.Generic;
-using Object=UnityEngine.Object;
-
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
+using Unity.Scenes;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Utilities.HybridMono
 {
-    /// <summary>
-    /// Static system responsible for discovering and executing MonoBakers.
-    /// It handles the baking of authoring MonoBehaviours into components and buffers.
-    /// </summary>
-    [ExecuteAlways]
-    public static class MonoBakingSystem 
-    {
+	/// <summary>
+	/// Static system responsible for discovering and executing MonoBakers.
+	/// Handles runtime-only baking of authoring MonoBehaviours into Entities.
+	/// </summary>
+	public static class MonoBakingSystem
+	{
+		#region Fields
+		/// <summary>
+		/// Cache of baker instances, indexed by the authoring component type they handle.
+		/// </summary>
+		private static readonly Dictionary<Type, object> _bakerCache = new Dictionary<Type, object>();
 
-        /// <summary>
-        /// Cache of baker instances, indexed by the authoring component type they handle.
-        /// </summary>
-        private static readonly Dictionary<Type, object> _bakerCache = new Dictionary<Type, object>();
-        /// <summary>
-        /// Set of authoring components that have already been baked.
-        /// </summary>
-        private static readonly HashSet<MonoBehaviour> _bakedAuthoring = new HashSet<MonoBehaviour>();
+		/// <summary>
+		/// Flag indicating if the system has been initialized.
+		/// </summary>
+		private static bool _initialized;
+		#endregion
 
-        /// <summary>
-        /// Flag indicating if the system has been initialized.
-        /// </summary>
-        private static bool _initialized;
+		#region Initialization
+		/// <summary>
+		/// Automatically initializes the system when the runtime starts, before any scenes are loaded.
+		/// </summary>
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+		private static void RuntimeInitialize()
+		{
+			InitializeSystem();
+		}
 
-#region SubScene Detection
+		/// <summary>
+		/// Initializes the baking system by discovering bakers and subscribing to scene events.
+		/// </summary>
+		private static void InitializeSystem()
+		{
+			if (_initialized) return;
 
-        /// <summary>
-        /// Type object for Unity.Scenes.SubScene, retrieved via reflection to avoid direct dependency.
-        /// </summary>
-        private static readonly Type SubSceneType = AppDomain.CurrentDomain.GetAssemblies()
-         .SelectMany(a =>
-              {
-                    try { return a.GetTypes(); }
-                    catch { return Array.Empty<Type>(); }
-                })  
-                .FirstOrDefault(t => t.FullName == "Unity.Scenes.SubScene");
-#endregion
+			DiscoverBakers();
 
+			// Subscribe to scene loads to automatically bake
+			SceneManager.sceneLoaded += OnSceneLoaded;
 
-        #region Initialization
-        /// <summary>
-        /// Automatically initializes the system when the runtime starts, before any scenes are loaded.
-        /// </summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void RuntimeInitialize()
-        {
-             InitializeSystem();
-           //  BakeAllInScene();
-        }
-        #if UNITY_EDITOR
-        /// <summary>
-        /// Automatically initializes the system in the editor when it finishes loading.
-        /// </summary>
-        [UnityEditor.InitializeOnLoadMethod]
-        private static void EditorInitialize()
-        {
-            InitializeSystem();
-            // EditorApplication.hierarchyChanged += BakeAllInScene;
-        }
-        #endif
+			_initialized = true;
+			Debug.Log($"[MonoBakingSystem] Initialized: {_bakerCache.Count} bakers cached.");
+		}
+		#endregion
 
-        /// <summary>
-        /// Initializes the baking system by discovering bakers and subscribing to scene events.
-        /// </summary>
-        private static void InitializeSystem()
-        {
-            if (_initialized) return;
+		#region Baker Discovery
+		/// <summary>
+		/// Scans all loaded assemblies for classes inheriting from MonoBaker and populates the cache.
+		/// </summary>
+		private static void DiscoverBakers()
+		{
+			_bakerCache.Clear();
 
-            DiscoverBakers();
-            
-            // Subscribe to scene loads to automatically bake static level data
-            SceneManager.sceneLoaded += OnSceneLoaded;
-            
-            _initialized = true;
-          //  Debug.Log($"[MonoBakingSystem] Initialized: {_bakerCache.Count} bakers cached.");
+			var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+			foreach (var assembly in assemblies)
+			{
+				Type[] types;
+				try { types = assembly.GetTypes(); }
+				catch { continue; }
 
-        }
+				foreach (var type in types)
+				{
+					if (type.IsAbstract || type.IsInterface) continue;
 
-#endregion
+					var baseType = type.BaseType;
+					while (baseType != null)
+					{
+						if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(MonoBaker<>))
+						{
+							Type authoringType = baseType.GetGenericArguments()[0];
 
-        #region Baker Discovery
+							if (!_bakerCache.ContainsKey(authoringType))
+							{
+								var bakerInstance = Activator.CreateInstance(type);
+								_bakerCache.Add(authoringType, bakerInstance);
+							}
+							break;
+						}
+						baseType = baseType.BaseType;
+					}
+				}
+			}
+		}
 
-        /// <summary>
-        /// Scans all loaded assemblies for classes inheriting from MonoBaker and populates the cache.
-        /// </summary>
-        private static void DiscoverBakers()
-        {
-            //clear baker cache
-            _bakerCache.Clear();
+		/// <summary>
+		/// Event handler called when a scene is loaded.
+		/// </summary>
+		private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+		{
+			BakeAllInScene();
+		}
 
-            // Scan all loaded assemblies for any class inheriting from MonoBaker<T>
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-            foreach (var assembly in assemblies)
-            {
-                foreach (var type in assembly.GetTypes())
-                {
-                    if (type.IsAbstract || type.IsInterface) continue;
+		/// <summary>
+		/// Finds and bakes all MonoBehaviours with registered bakers in loaded scenes.
+		/// </summary>
+		public static void BakeAllInScene()
+		{
+			var allComponents = GameObject.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+			foreach (var comp in allComponents)
+			{
+				BakeAuthoring(comp);
+			}
+		}
 
-                    var baseType = type.BaseType;
-                    while (baseType != null)
-                    {
-                        // Check if the base type is the generic MonoBaker<>
-                        if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(MonoBaker<>))
-                        {
-                            // Extract the generic parameter TAuthoring
-                            Type authoringType = baseType.GetGenericArguments()[0];
-                            
-                            if (!_bakerCache.ContainsKey(authoringType))
-                            {
-                                // Instantiate the baker once and cache it
-                                var bakerInstance = Activator.CreateInstance(type);
-                                var bakeMethod = baseType.GetMethod("BakeInternal", BindingFlags.Instance | BindingFlags.NonPublic);
-                                
-                                _bakerCache.Add(authoringType, bakerInstance);
-                            }
-                            break;
-                        }
-                        baseType = baseType.BaseType;
-                    }
-                }
-            }
-        }
-        /// <summary>
-        /// Checks if a type inherits from MonoBaker.
-        /// </summary>
-        /// <param name="type">The type to check.</param>
-        /// <returns>True if it is a MonoBaker, otherwise false.</returns>
- private static bool IsMonoBaker(Type type)
-        {
-            while (type != null)
-            {
-                if (type.IsGenericType &&type.GetGenericTypeDefinition() == typeof(MonoBaker<>))
-                     return true;  
-                     type = type.BaseType;   
-                    
-            }
+		/// <summary>
+		/// Bakes a single authoring component if a corresponding baker exists.
+		/// Creates or updates the associated Entity.
+		/// </summary>
+		/// <param name="authoring">The authoring component to bake.</param>
+		public static void BakeAuthoring(MonoBehaviour authoring)
+		{
+			if (authoring == null) return;
 
-            return false;
-        }
+			// Ensure scene is fully loaded
+			if (!authoring.gameObject.scene.isLoaded) return;
 
-        /// <summary>
-        /// Event handler called when a scene is loaded. Triggers baking of all components in the scene.
-        /// </summary>
-        /// <param name="scene">The loaded scene.</param>
-        /// <param name="mode">The load scene mode.</param>
-        private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-        {
-          //  Debug.Log($"[MonoBakingSystem] Scene loaded: {scene.name}");
-            BakeAllInScene();
-        }
+			// Skip if in a SubScene (handled by standard ECS baking)
+			if (IsInSubScene(authoring)) return;
 
-        /// <summary>
-        /// Finds and bakes all MonoBehaviours in the current hierarchy.
-        /// </summary>
-        public static void BakeAllInScene()
-        {
-            // FindObjectsByType ensures we grab all active MonoBehaviours in the hierarchy
-            var allComponents = GameObject.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
-            foreach (var comp in allComponents)
-            {
-                BakeAuthoring(comp);
-            }
-        }
+			Type authoringType = authoring.GetType();
 
+			if (!_bakerCache.TryGetValue(authoringType, out var baker))
+			{
+				// No baker for this type - that's fine, not all MonoBehaviours need baking
+				return;
+			}
 
-        /// <summary>
-        /// Bakes a single authoring component if a corresponding baker exists.
-        /// </summary>
-        /// <param name="authoring">The authoring component to bake.</param>
-       public static void BakeAuthoring(MonoBehaviour authoring)
-    {
-         if (!authoring) return;
+			try
+			{
+				var bakeMethod = baker.GetType().GetMethod("BakeInternal", BindingFlags.Instance | BindingFlags.NonPublic);
 
-         //  Ensure scene is fully loaded
-        if (!authoring.gameObject.scene.isLoaded)
-        return;
+				bakeMethod.Invoke(baker, new object[] { authoring });
+			}
+			catch (Exception ex)
+			{
+				Debug.LogError($"[MonoBakingSystem] Failed to bake {authoringType.Name}\n{ex}", authoring);
+			}
+		}
 
+		/// <summary>
+		/// Checks if an authoring component has already been baked.
+		/// </summary>
+		/// <param name="authoring">The authoring component to check.</param>
+		/// <returns>True if the component's GameObject is registered with MonoHybridAPI.</returns>
+		public static bool IsBaked(MonoBehaviour authoring)
+		{
+			if (authoring == null) return false;
+			return MonoHybridAPI.IsRegistered(authoring.gameObject);
+		}
 
-        if (_bakedAuthoring.Contains(authoring))
-            {
-               //  Object.Destroy(authoring);
-            }
-        //return;
+		/// <summary>
+		/// Checks if a baker exists for a given authoring type.
+		/// </summary>
+		/// <param name="authoringType">The authoring type to check.</param>
+		/// <returns>True if a baker exists for this type.</returns>
+		public static bool HasBaker(Type authoringType)
+		{
+			return _bakerCache.ContainsKey(authoringType);
+		}
 
-        Type authoringType = authoring.GetType();
+		/// <summary>
+		/// Checks if a baker exists for a given authoring type.
+		/// </summary>
+		/// <typeparam name="T">The authoring type to check.</typeparam>
+		/// <returns>True if a baker exists for this type.</returns>
+		public static bool HasBaker<T>() where T : MonoBehaviour
+		{
+			return _bakerCache.ContainsKey(typeof(T));
+		}
 
-        if (!_bakerCache.TryGetValue(authoringType, out var baker))
-        {
-             Debug.LogWarning($"[MonoBakingSystem] No baker found for {authoringType.Name}",authoring);
-            return;
-           
-    }
+		/// <summary>
+		/// Gets the count of registered bakers.
+		/// </summary>
+		public static int BakerCount => _bakerCache.Count;
+		#endregion
 
-    try
-        {
-        var bakeMethod = baker.GetType()
-            .GetMethod("BakeInternal", BindingFlags.Instance | BindingFlags.NonPublic);
+		#region SubScene Detection
+		/// <summary>
+		/// Checks if a component is part of a SubScene.
+		/// </summary>
+		/// <param name="component">The component to check.</param>
+		/// <returns>True if it is in a SubScene.</returns>
+		private static bool IsInSubScene(MonoBehaviour component)
+		{
+			return component.GetComponentInParent<SubScene>();
+		}
+		#endregion
 
-        bakeMethod.Invoke(baker, new object[] { authoring });
-
-      //  _bakedAuthoring.Add(authoring);
-
-       // Debug.Log( $"[MonoBakingSystem] Baked {authoringType.Name}",   authoring);
-           
-         
-        }
-    catch (Exception ex)
-        {
-        Debug.LogError(
-            $"[MonoBakingSystem] Failed to bake {authoringType.Name}\n{ex}",
-            authoring);
-        }
-    }   
-        #endregion
-
-    
-
-        #region SubSceneDetection
-
-        /// <summary>
-        /// Checks if a component belongs to a scene other than the active one.
-        /// </summary>
-        /// <param name="component">The component to check.</param>
-        /// <returns>True if it is in a different scene, otherwise false.</returns>
-        private static bool IsSubSceneComponent(MonoBehaviour component)
-        {
-            // Check if the component is part of a sub-scene
-            return component.gameObject.scene.name != SceneManager.GetActiveScene().name;
-        }
-        /// <summary>
-        /// Checks if a component is part of a SubScene using reflection to detect the SubScene component.
-        /// </summary>
-        /// <param name="component">The component to check.</param>
-        /// <returns>True if it is in a SubScene, otherwise false.</returns>
-        private static bool IsInSubScene(MonoBehaviour component)
-        {
-
-            if (SubSceneType == null)
-            return false;
-
-            return component.GetComponentInParent(SubSceneType) != null;
-
-          //return component.gameObject.scene.name.EndsWith(".SubScene");
-        }
-        
-        #endregion
-    
-
-        
-    }
+		#region Cleanup
+		/// <summary>
+		/// Clears the baking system state.
+		/// Does not affect already-baked entities.
+		/// </summary>
+		public static void Clear()
+		{
+			// No internal tracking needed - MonoHybridAPI handles entity tracking
+		}
+		#endregion
+	}
 }

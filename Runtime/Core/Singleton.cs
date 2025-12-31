@@ -21,7 +21,7 @@ namespace Utilities.HybridMono
             {
                 if (instance == null)
                 {
-                    instance = FindObjectOfType<T>();
+                    instance = FindFirstObjectByType<T>();
                     if (instance == null)
                     {
                         var go = new GameObject(typeof(T).Name);
