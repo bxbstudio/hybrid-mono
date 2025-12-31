@@ -295,6 +295,98 @@ namespace Utilities.HybridMono
 		}
 		#endregion
 
+		#region Entity-Direct Component API
+		/// <summary>
+		/// Checks if an Entity has a component.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <returns>True if the component exists.</returns>
+		public static bool HasComponent<T>(Entity entity) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			return _entityManager.HasComponent<T>(entity);
+		}
+
+		/// <summary>
+		/// Gets component data from an Entity.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <returns>The component data.</returns>
+		public static T GetComponentData<T>(Entity entity) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			return _entityManager.GetComponentData<T>(entity);
+		}
+
+		/// <summary>
+		/// Tries to get component data from an Entity.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <param name="data">The component data if found.</param>
+		/// <returns>True if the component exists.</returns>
+		public static bool TryGetComponentData<T>(Entity entity, out T data) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			if (!_entityManager.HasComponent<T>(entity))
+			{
+				data = default;
+				return false;
+			}
+			data = _entityManager.GetComponentData<T>(entity);
+			return true;
+		}
+
+		/// <summary>
+		/// Sets component data on an Entity.
+		/// The component must already exist.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <param name="data">The component data to set.</param>
+		public static void SetComponentData<T>(Entity entity, T data) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			_entityManager.SetComponentData(entity, data);
+		}
+
+		/// <summary>
+		/// Adds or updates a component on an Entity.
+		/// If the component doesn't exist, it will be added.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <param name="data">The component data.</param>
+		public static void AddComponentData<T>(Entity entity, T data) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			if (!_entityManager.HasComponent<T>(entity))
+			{
+				_entityManager.AddComponentData(entity, data);
+			}
+			else
+			{
+				_entityManager.SetComponentData(entity, data);
+			}
+		}
+
+		/// <summary>
+		/// Removes a component from an Entity.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		public static void RemoveComponent<T>(Entity entity) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			if (_entityManager.HasComponent<T>(entity))
+			{
+				_entityManager.RemoveComponent<T>(entity);
+			}
+		}
+		#endregion
+
 		#region Buffer API
 		/// <summary>
 		/// Checks if the Entity associated with a GameObject has a buffer.
@@ -398,6 +490,110 @@ namespace Utilities.HybridMono
 		}
 		#endregion
 
+		#region Entity-Direct Buffer API
+		/// <summary>
+		/// Checks if an Entity has a buffer.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <returns>True if the buffer exists.</returns>
+		public static bool HasBuffer<T>(Entity entity) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			return _entityManager.HasBuffer<T>(entity);
+		}
+
+		/// <summary>
+		/// Gets a DynamicBuffer from an Entity.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <returns>The DynamicBuffer.</returns>
+		public static DynamicBuffer<T> GetBuffer<T>(Entity entity) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			return _entityManager.GetBuffer<T>(entity);
+		}
+
+		/// <summary>
+		/// Tries to get a DynamicBuffer from an Entity.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <param name="buffer">The buffer if found.</param>
+		/// <returns>True if the buffer exists.</returns>
+		public static bool TryGetBuffer<T>(Entity entity, out DynamicBuffer<T> buffer) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			if (!_entityManager.HasBuffer<T>(entity))
+			{
+				buffer = default;
+				return false;
+			}
+			buffer = _entityManager.GetBuffer<T>(entity);
+			return true;
+		}
+
+		/// <summary>
+		/// Adds a buffer to an Entity if not present.
+		/// Returns the buffer (existing or newly added).
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <returns>The DynamicBuffer.</returns>
+		public static DynamicBuffer<T> AddBuffer<T>(Entity entity) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			if (!_entityManager.HasBuffer<T>(entity))
+			{
+				return _entityManager.AddBuffer<T>(entity);
+			}
+			return _entityManager.GetBuffer<T>(entity);
+		}
+
+		/// <summary>
+		/// Ensures a buffer exists on an Entity with specified initial capacity.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <param name="capacity">The initial capacity.</param>
+		/// <returns>The DynamicBuffer.</returns>
+		public static DynamicBuffer<T> EnsureBuffer<T>(Entity entity, int capacity = 0) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			DynamicBuffer<T> buffer;
+			if (!_entityManager.HasBuffer<T>(entity))
+			{
+				buffer = _entityManager.AddBuffer<T>(entity);
+			}
+			else
+			{
+				buffer = _entityManager.GetBuffer<T>(entity);
+			}
+
+			if (capacity > 0)
+			{
+				buffer.EnsureCapacity(capacity);
+			}
+
+			return buffer;
+		}
+
+		/// <summary>
+		/// Removes a buffer from an Entity.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		public static void RemoveBuffer<T>(Entity entity) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			if (_entityManager.HasBuffer<T>(entity))
+			{
+				_entityManager.RemoveComponent<T>(entity);
+			}
+		}
+		#endregion
+
 		#region Query API
 		/// <summary>
 		/// Creates an EntityQuery for the HybridMono World.
@@ -437,6 +633,213 @@ namespace Utilities.HybridMono
 		public static IReadOnlyDictionary<GameObject, Entity> GetAllMappings()
 		{
 			return _gameObjectToEntity;
+		}
+		#endregion
+
+		#region Enabled Component API
+		/// <summary>
+		/// Checks if an enableable component is enabled on the Entity associated with a GameObject.
+		/// </summary>
+		/// <typeparam name="T">The enableable component type.</typeparam>
+		/// <param name="gameObject">The GameObject.</param>
+		/// <returns>True if the component is enabled.</returns>
+		public static bool IsComponentEnabled<T>(GameObject gameObject) where T : unmanaged, IComponentData, IEnableableComponent
+		{
+			Entity entity = GetEntity(gameObject);
+			return _entityManager.IsComponentEnabled<T>(entity);
+		}
+
+		/// <summary>
+		/// Sets the enabled state of an enableable component on the Entity associated with a GameObject.
+		/// </summary>
+		/// <typeparam name="T">The enableable component type.</typeparam>
+		/// <param name="gameObject">The GameObject.</param>
+		/// <param name="enabled">The enabled state to set.</param>
+		public static void SetComponentEnabled<T>(GameObject gameObject, bool enabled) where T : unmanaged, IComponentData, IEnableableComponent
+		{
+			Entity entity = GetEntity(gameObject);
+			_entityManager.SetComponentEnabled<T>(entity, enabled);
+		}
+
+		/// <summary>
+		/// Checks if an enableable component is enabled on an Entity.
+		/// </summary>
+		/// <typeparam name="T">The enableable component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <returns>True if the component is enabled.</returns>
+		public static bool IsComponentEnabled<T>(Entity entity) where T : unmanaged, IComponentData, IEnableableComponent
+		{
+			EnsureInitialized();
+			return _entityManager.IsComponentEnabled<T>(entity);
+		}
+
+		/// <summary>
+		/// Sets the enabled state of an enableable component on an Entity.
+		/// </summary>
+		/// <typeparam name="T">The enableable component type.</typeparam>
+		/// <param name="entity">The Entity.</param>
+		/// <param name="enabled">The enabled state to set.</param>
+		public static void SetComponentEnabled<T>(Entity entity, bool enabled) where T : unmanaged, IComponentData, IEnableableComponent
+		{
+			EnsureInitialized();
+			_entityManager.SetComponentEnabled<T>(entity, enabled);
+		}
+		#endregion
+
+		#region Bulk Component Export
+		/// <summary>
+		/// Gets component data from all entities matching a query as a NativeArray.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="query">The EntityQuery to match.</param>
+		/// <param name="allocator">The allocator to use for the NativeArray.</param>
+		/// <returns>A NativeArray containing the component data. Caller is responsible for disposal.</returns>
+		public static NativeArray<T> GetComponentDataArray<T>(EntityQuery query, Allocator allocator = Allocator.TempJob) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			return query.ToComponentDataArray<T>(allocator);
+		}
+
+		/// <summary>
+		/// Gets component data from a list of GameObjects as a NativeArray.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="gameObjects">The GameObjects to get data from.</param>
+		/// <param name="allocator">The allocator to use for the NativeArray.</param>
+		/// <returns>A NativeArray containing the component data. Caller is responsible for disposal.</returns>
+		public static NativeArray<T> GetComponentDataArray<T>(IEnumerable<GameObject> gameObjects, Allocator allocator = Allocator.TempJob) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			var list = new List<T>();
+			foreach (var go in gameObjects)
+			{
+				if (TryGetComponentData<T>(go, out T data))
+				{
+					list.Add(data);
+				}
+			}
+			var array = new NativeArray<T>(list.Count, allocator);
+			for (int i = 0; i < list.Count; i++)
+			{
+				array[i] = list[i];
+			}
+			return array;
+		}
+
+		/// <summary>
+		/// Gets component data from all registered entities that have the component.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="allocator">The allocator to use for the NativeArray.</param>
+		/// <returns>A NativeArray containing the component data. Caller is responsible for disposal.</returns>
+		public static NativeArray<T> GetAllComponentData<T>(Allocator allocator = Allocator.TempJob) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			var query = CreateQuery(ComponentType.ReadOnly<T>());
+			return query.ToComponentDataArray<T>(allocator);
+		}
+		#endregion
+
+		#region Bulk Component Import
+		/// <summary>
+		/// Sets component data on all entities matching a query from a NativeArray.
+		/// The array must have the same length as the number of entities in the query.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="query">The EntityQuery to match.</param>
+		/// <param name="data">The component data to set.</param>
+		public static void SetComponentDataArray<T>(EntityQuery query, NativeArray<T> data) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			query.CopyFromComponentDataArray(data);
+		}
+
+		/// <summary>
+		/// Sets component data on a list of GameObjects from a NativeArray.
+		/// The array must have the same length as the number of GameObjects.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="gameObjects">The GameObjects to set data on.</param>
+		/// <param name="data">The component data to set.</param>
+		public static void SetComponentDataArray<T>(IEnumerable<GameObject> gameObjects, NativeArray<T> data) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			int index = 0;
+			foreach (var go in gameObjects)
+			{
+				if (index >= data.Length) break;
+				if (TryGetEntity(go, out Entity entity) && _entityManager.HasComponent<T>(entity))
+				{
+					_entityManager.SetComponentData(entity, data[index]);
+				}
+				index++;
+			}
+		}
+
+		/// <summary>
+		/// Sets component data on all registered entities from a NativeArray.
+		/// The array must have the same length as the number of entities with the component.
+		/// </summary>
+		/// <typeparam name="T">The component type.</typeparam>
+		/// <param name="data">The component data to set.</param>
+		public static void SetAllComponentData<T>(NativeArray<T> data) where T : unmanaged, IComponentData
+		{
+			EnsureInitialized();
+			var query = CreateQuery(ComponentType.ReadWrite<T>());
+			query.CopyFromComponentDataArray(data);
+		}
+		#endregion
+
+		#region Bulk Buffer Export
+		/// <summary>
+		/// Gets DynamicBuffers from all entities matching a query as a managed array.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="query">The EntityQuery to match.</param>
+		/// <returns>A managed array of DynamicBuffers. Modifications to buffers will affect entity data.</returns>
+		public static DynamicBuffer<T>[] GetBufferArray<T>(EntityQuery query) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			var entities = query.ToEntityArray(Allocator.Temp);
+			var buffers = new DynamicBuffer<T>[entities.Length];
+			for (int i = 0; i < entities.Length; i++)
+			{
+				buffers[i] = _entityManager.GetBuffer<T>(entities[i]);
+			}
+			entities.Dispose();
+			return buffers;
+		}
+
+		/// <summary>
+		/// Gets DynamicBuffers from a list of GameObjects as a managed array.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <param name="gameObjects">The GameObjects to get buffers from.</param>
+		/// <returns>A managed array of DynamicBuffers. Modifications to buffers will affect entity data.</returns>
+		public static DynamicBuffer<T>[] GetBufferArray<T>(IEnumerable<GameObject> gameObjects) where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			var list = new List<DynamicBuffer<T>>();
+			foreach (var go in gameObjects)
+			{
+				if (TryGetBuffer<T>(go, out DynamicBuffer<T> buffer))
+				{
+					list.Add(buffer);
+				}
+			}
+			return list.ToArray();
+		}
+
+		/// <summary>
+		/// Gets DynamicBuffers from all registered entities that have the buffer.
+		/// </summary>
+		/// <typeparam name="T">The buffer element type.</typeparam>
+		/// <returns>A managed array of DynamicBuffers. Modifications to buffers will affect entity data.</returns>
+		public static DynamicBuffer<T>[] GetAllBuffers<T>() where T : unmanaged, IBufferElementData
+		{
+			EnsureInitialized();
+			var query = CreateQuery(ComponentType.ReadWrite<T>());
+			return GetBufferArray<T>(query);
 		}
 		#endregion
 	}

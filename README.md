@@ -13,7 +13,7 @@ The package creates mirror ECS Entities for GameObjects, enabling:
 ## Core Components
 
 ### MonoHybridAPI (Static Class)
-Central API for the HybridMono system:
+Central API for the HybridMono system. All component and buffer operations go through this static class:
 
 ```csharp
 // Access the dedicated World
@@ -23,42 +23,68 @@ EntityManager em = MonoHybridAPI.EntityManager;
 // Component access via GameObject
 var data = MonoHybridAPI.GetComponentData<MyComponent>(gameObject);
 MonoHybridAPI.SetComponentData(gameObject, newData);
+MonoHybridAPI.AddComponentData(gameObject, newData);
 
-// Buffer access via GameObject
+// Component access via Entity (when you already have the Entity)
+var data = MonoHybridAPI.GetComponentData<MyComponent>(entity);
+MonoHybridAPI.SetComponentData(entity, newData);
+
+// Buffer access
 var buffer = MonoHybridAPI.GetBuffer<MyBufferElement>(gameObject);
+var buffer = MonoHybridAPI.EnsureBuffer<MyBufferElement>(entity, capacity: 8);
 
 // Entity lookup
 if (MonoHybridAPI.TryGetEntity(gameObject, out Entity entity)) { }
 
 // Query creation
 EntityQuery query = MonoHybridAPI.CreateQuery(ComponentType.ReadWrite<MyComponent>());
+
+// Bulk export/import for job processing
+using var dataArray = MonoHybridAPI.GetComponentDataArray<MyComponent>(query);
+// Process in jobs...
+MonoHybridAPI.SetComponentDataArray(query, dataArray); // Write back
+
+// Bulk buffer access (modifications affect entities directly)
+var buffers = MonoHybridAPI.GetBufferArray<MyBufferElement>(query);
+
+// Enabled component support
+bool enabled = MonoHybridAPI.IsComponentEnabled<MyEnableableComponent>(gameObject);
+MonoHybridAPI.SetComponentEnabled<MyEnableableComponent>(entity, false);
 ```
 
 ### MonoBaker<TAuthoring>
-Base class for baking authoring MonoBehaviours into Entity components:
+Base class for baking authoring MonoBehaviours into Entity components. Provides context properties; all component operations use `MonoHybridAPI`:
 
 ```csharp
 public class VehicleBaker : MonoBaker<VehicleAuthoring>
 {
     public override void Bake(VehicleAuthoring authoring)
     {
-        // Add components directly to the Entity
-        AddComponent(new VehicleData { MaxSpeed = authoring.maxSpeed });
+        // Add components via MonoHybridAPI using the Entity property
+        MonoHybridAPI.AddComponentData(Entity, new VehicleData { MaxSpeed = authoring.maxSpeed });
 
         // Add buffers with optional capacity
-        var buffer = AddBuffer<WheelElement>(4);
+        var buffer = MonoHybridAPI.EnsureBuffer<WheelElement>(Entity, 4);
 
         // Check if rebaking
         if (IsRebake)
         {
             // Update existing data instead of resetting
+            var existing = MonoHybridAPI.GetComponentData<VehicleData>(Entity);
+            MonoHybridAPI.SetComponentData(Entity, new VehicleData {
+                MaxSpeed = authoring.maxSpeed,
+                CurrentSpeed = existing.CurrentSpeed // Preserve runtime state
+            });
         }
+
+        // Access Unity components via GameObject property
+        var rb = GameObject.GetComponentInParent<Rigidbody>();
     }
 }
 ```
 
 ### MonoSystem
-Base class for systems that process HybridMono entities:
+Base class for systems that process HybridMono entities. Provides lifecycle hooks; all component operations use `MonoHybridAPI`:
 
 ```csharp
 public class VehicleSystem : MonoSystem
@@ -67,27 +93,29 @@ public class VehicleSystem : MonoSystem
 
     protected override void OnCreate()
     {
-        _vehicleQuery = CreateQuery(ComponentType.ReadWrite<VehicleData>());
+        _vehicleQuery = MonoHybridAPI.CreateQuery(ComponentType.ReadWrite<VehicleData>());
     }
 
     protected override void OnFixedUpdate()
     {
-        // Schedule jobs for parallel execution
-        ScheduleParallel(new UpdateVehicleJob
-        {
-            DeltaTime = Time.fixedDeltaTime
-        }, _vehicleQuery);
-    }
+        // Option 1: Bulk export for job processing
+        using var dataArray = MonoHybridAPI.GetComponentDataArray<VehicleData>(_vehicleQuery);
+        // Schedule jobs with NativeArrays...
+        MonoHybridAPI.SetComponentDataArray(_vehicleQuery, dataArray); // Write back
 
-    [BurstCompile]
-    partial struct UpdateVehicleJob : IJobEntity
-    {
-        public float DeltaTime;
-
-        void Execute(ref VehicleData vehicle)
+        // Option 2: Direct access via MonoHybridAPI
+        foreach (var go in MonoHybridAPI.GetRegisteredGameObjects())
         {
-            vehicle.CurrentSpeed += DeltaTime;
+            if (MonoHybridAPI.HasComponent<VehicleData>(go))
+            {
+                var data = MonoHybridAPI.GetComponentData<VehicleData>(go);
+                data.CurrentSpeed += Time.fixedDeltaTime;
+                MonoHybridAPI.SetComponentData(go, data);
+            }
         }
+
+        // Option 3: Get buffers for direct modification
+        var buffers = MonoHybridAPI.GetBufferArray<WheelElement>(_vehicleQuery);
     }
 }
 ```
@@ -126,9 +154,9 @@ MonoBakingSystem discovers and executes MonoBaker<T>
     ↓
 MonoHybridAPI.RegisterGameObject() creates Entity + MonoEntityTracker
     ↓
-Baker.AddComponent/AddBuffer adds data to Entity
+Baker uses MonoHybridAPI.AddComponentData/EnsureBuffer to add data to Entity
     ↓
-MonoSystem processes Entities with IJobEntity
+MonoSystem uses MonoHybridAPI for component access and bulk export/import
     ↓
 GameObject destroyed → MonoEntityTracker.OnDestroy() → Entity destroyed
 ```
@@ -140,7 +168,8 @@ GameObject destroyed → MonoEntityTracker.OnDestroy() → Entity destroyed
 | **Dedicated World** | "HybridMono World" isolates hybrid entities |
 | **GameObject-Entity Mapping** | Dictionary-based O(1) lookup |
 | **Automatic Cleanup** | MonoEntityTracker handles destruction |
-| **IJobEntity Support** | Schedule/ScheduleParallel for parallel processing |
+| **Bulk Export/Import** | `GetComponentDataArray`/`SetComponentDataArray` for job processing |
+| **Buffer Access** | `GetBufferArray` returns DynamicBuffers for direct modification |
 | **Rebake Support** | IsRebake property detects update vs. initial bake |
 | **SubScene Detection** | Skips GameObjects in SubScenes |
 
@@ -160,12 +189,12 @@ public class HealthAuthoring : MonoBehaviour
     public float maxHealth = 100f;
 }
 
-// 3. Create a baker
+// 3. Create a baker (uses MonoHybridAPI for component operations)
 public class HealthBaker : MonoBaker<HealthAuthoring>
 {
     public override void Bake(HealthAuthoring auth)
     {
-        AddComponent(new HealthData
+        MonoHybridAPI.AddComponentData(Entity, new HealthData
         {
             Current = auth.maxHealth,
             Max = auth.maxHealth
@@ -173,19 +202,21 @@ public class HealthBaker : MonoBaker<HealthAuthoring>
     }
 }
 
-// 4. Create a system
+// 4. Create a system (uses MonoHybridAPI for queries and data access)
 public class HealthSystem : MonoSystem
 {
     private EntityQuery _query;
 
     protected override void OnCreate()
     {
-        _query = CreateQuery(ComponentType.ReadOnly<HealthData>());
+        _query = MonoHybridAPI.CreateQuery(ComponentType.ReadOnly<HealthData>());
     }
 
     protected override void OnUpdate()
     {
-        // Process all entities with HealthData
+        // Bulk export for processing
+        using var healthData = MonoHybridAPI.GetComponentDataArray<HealthData>(_query);
+        // Process...
     }
 }
 
