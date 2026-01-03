@@ -19,7 +19,7 @@ namespace Utilities.HybridMono
 		#region Fields
 		private static World _world;
 		private static EntityManager _entityManager;
-		private static readonly Dictionary<GameObject, Entity> _gameObjectToEntity = new Dictionary<GameObject, Entity>();
+		private static readonly Dictionary<GameObject, Entity> _gameObjectToEntity = new();
 		private static bool _isInitialized;
 		#endregion
 
@@ -77,6 +77,8 @@ namespace Utilities.HybridMono
 
 			_isInitialized = true;
 			Debug.Log($"[MonoHybridAPI] Initialized {WORLD_NAME}");
+
+			Application.quitting += Dispose;
 		}
 
 		private static void EnsureInitialized()
