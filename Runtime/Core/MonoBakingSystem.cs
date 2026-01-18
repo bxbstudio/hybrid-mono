@@ -1,9 +1,11 @@
 using System;
 using System.Reflection;
+using System.Linq;
 using System.Collections.Generic;
 using Unity.Scenes;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+
 
 namespace Utilities.HybridMono
 {
@@ -18,6 +20,13 @@ namespace Utilities.HybridMono
 		/// Cache of baker instances, indexed by the authoring component type they handle.
 		/// </summary>
 		private static readonly Dictionary<Type, object> _bakerCache = new Dictionary<Type, object>();
+
+
+	/// <summary>
+		/// Sorted list of baker types in dependency order (respects BakeAfter attributes).
+		/// </summary>
+		private static List<Type> _bakerOrder = new List<Type>();
+
 
 		/// <summary>
 		/// Flag indicating if the system has been initialized.
@@ -35,22 +44,52 @@ namespace Utilities.HybridMono
 			InitializeSystem();
 		}
 
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		private static void ResetStatics()
+		{
+			// Subscribe to application quit for builds
+			Application.quitting += OnApplicationQuitting;
+			Debug.Log("[MonoBakingSystem] Initialization flag reset");
+
+
+		}
+		/// <summary>
+		/// Called when application is quitting (builds).
+		/// </summary>
+		private static void OnApplicationQuitting()
+		{
+			_initialized = false;
+			SceneManager.sceneLoaded -= OnSceneLoaded;
+			Debug.Log("[MonoBakingSystem] Application Quitting - Reset");
+		}
 		/// <summary>
 		/// Initializes the baking system by discovering bakers and subscribing to scene events.
 		/// </summary>
 		private static void InitializeSystem()
 		{
+			
 			if (_initialized) return;
 
+			Debug.Log("Bake All Scenes");		
 			DiscoverBakers();
+			SortBakersByDependencies();
+			//OnSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
 
 			// Subscribe to scene loads to automatically bake
 			SceneManager.sceneLoaded += OnSceneLoaded;
+
+			// Reload current scene asynchronously
+			Scene activeScene = SceneManager.GetActiveScene();
+			AsyncOperation asyncLoad = SceneManager.LoadSceneAsync(activeScene.name);
+
+
 
 			_initialized = true;
 			Debug.Log($"[MonoBakingSystem] Initialized: {_bakerCache.Count} bakers cached.");
 		}
 		#endregion
+
+
 
 		#region Baker Discovery
 		/// <summary>
@@ -91,12 +130,83 @@ namespace Utilities.HybridMono
 			}
 		}
 
+			private static void SortBakersByDependencies()
+		{
+			// Build dependency graph
+			var dependencies = new Dictionary<Type, List<Type>>();
+			var allBakerTypes = _bakerCache.Values.Select(b => b.GetType()).ToList();
+
+			foreach (var bakerType in allBakerTypes)
+			{
+				dependencies[bakerType] = new List<Type>();
+
+				var bakeAfterAttrs = bakerType.GetCustomAttributes<BakeAfterAttribute>();
+				foreach (var attr in bakeAfterAttrs)
+				{
+					if (attr.TargetType != null && allBakerTypes.Contains(attr.TargetType))
+					{
+						dependencies[bakerType].Add(attr.TargetType);
+					}
+				}
+			}
+
+			// Topological sort
+			_bakerOrder = TopologicalSort(allBakerTypes, dependencies);
+
+			Debug.Log($"[MonoBakingSystem] Baker order: {string.Join(" -> ", _bakerOrder.Select(t => t.Name))}");
+		}
+
+		/// <summary>
+		/// Performs topological sort on baker types based on dependencies.
+		/// </summary>
+		private static List<Type> TopologicalSort(List<Type> types, Dictionary<Type, List<Type>> dependencies)
+		{
+			var sorted = new List<Type>();
+			var visited = new HashSet<Type>();
+			var visiting = new HashSet<Type>();
+
+			void Visit(Type type)
+			{
+				if (visited.Contains(type)) return;
+
+				if (visiting.Contains(type))
+				{
+					Debug.LogWarning($"[MonoBakingSystem] Circular dependency detected involving {type.Name}");
+					return;
+				}
+
+				visiting.Add(type);
+
+				if (dependencies.TryGetValue(type, out var deps))
+				{
+					foreach (var dep in deps)
+					{
+						Visit(dep);
+					}
+				}
+
+				visiting.Remove(type);
+				visited.Add(type);
+				sorted.Add(type);
+			}
+
+			foreach (var type in types)
+			{
+				Visit(type);
+			}
+
+			return sorted;
+		}
+
+
 		/// <summary>
 		/// Event handler called when a scene is loaded.
 		/// </summary>
 		private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
 		{
+			Debug.Log($"Bake Scene: {scene.name}");
 			BakeAllInScene();
+			
 		}
 
 		/// <summary>
@@ -105,9 +215,37 @@ namespace Utilities.HybridMono
 		public static void BakeAllInScene()
 		{
 			var allComponents = GameObject.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+
+			// Group components by authoring type
+			var componentsByType = new Dictionary<Type, List<MonoBehaviour>>();
 			foreach (var comp in allComponents)
 			{
-				BakeAuthoring(comp);
+				var compType = comp.GetType();
+				if (_bakerCache.ContainsKey(compType))
+				{
+					if (!componentsByType.ContainsKey(compType))
+					{
+						componentsByType[compType] = new List<MonoBehaviour>();
+					}
+					componentsByType[compType].Add(comp);
+				}
+			}
+
+			// Bake in dependency order
+			foreach (var bakerType in _bakerOrder)
+			{
+				// Find the authoring type for this baker
+				var authoringType = bakerType.BaseType?.GetGenericArguments()[0];
+				if (authoringType == null) continue;
+
+				if (componentsByType.TryGetValue(authoringType, out var components))
+				{
+					Debug.Log($"[MonoBakingSystem] Baking {components.Count} '{authoringType.Name}' components using '{bakerType.Name}'");
+					foreach (var comp in components)
+					{
+						BakeAuthoring(comp);
+					}
+				}
 			}
 		}
 
