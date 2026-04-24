@@ -1,8 +1,8 @@
-using System;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Profiling;
+using Utilities.Core;
 using UnityEngine;
 
 namespace Utilities.HybridMono
@@ -11,7 +11,7 @@ namespace Utilities.HybridMono
     /// Base class for custom systems that process Entities in the HybridMono World.
     /// Provides life-cycle hooks and job execution support.
     /// </summary>
-    public abstract class MonoSystem : PersistentSingleton<MonoSystem>
+    public abstract class MonoSystem : BehaviourSingleton<MonoSystem>
     {
         #region Profiler Markers
         private static readonly ProfilerMarker UpdateMarker =
@@ -26,7 +26,12 @@ namespace Utilities.HybridMono
 
         #region Properties
         /// <summary>
-        /// Gets the HybridMono World.
+        /// Gets a value indicating whether the system should persist across scene changes.
+        /// </summary>
+        public override bool Persistent => true;
+
+        /// <summary>
+        /// Gets the HybridMono World instance.
         /// </summary>
         protected World World => MonoHybridAPI.World;
 
@@ -46,6 +51,10 @@ namespace Utilities.HybridMono
         protected override void Awake()
         {
             base.Awake();
+
+            if (ToBeDestroyed)
+                return;
+
             OnCreate();
         }
 
