@@ -60,6 +60,13 @@ namespace Utilities.HybridMono
 		#endregion
 
 		#region Initialization
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		private static void ResetStaticState()
+		{
+			Dispose();
+			_gameObjectToEntity.Clear();
+		}
+
 		/// <summary>
 		/// Initializes the HybridMono World. Called automatically before scene load.
 		/// </summary>
@@ -68,23 +75,23 @@ namespace Utilities.HybridMono
 		{
 			if (_isInitialized) return;
 
-			// Create dedicated world
 			_world = new World(WORLD_NAME, WorldFlags.Game);
 			_entityManager = _world.EntityManager;
 
-			// Add the world to the player loop for automatic updates
-			ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop(_world);
-
 			_isInitialized = true;
+#if UNITY_EDITOR
 			Debug.Log($"[MonoHybridAPI] Initialized {WORLD_NAME}");
+#endif
 
+			Application.quitting -= Dispose;
 			Application.quitting += Dispose;
 		}
 
 		private static void EnsureInitialized()
 		{
-			if (!_isInitialized)
+			if (!_isInitialized || _world == null || !_world.IsCreated)
 			{
+				_isInitialized = false;
 				Initialize();
 			}
 		}
@@ -96,6 +103,8 @@ namespace Utilities.HybridMono
 		{
 			if (!_isInitialized) return;
 
+			Application.quitting -= Dispose;
+
 			_gameObjectToEntity.Clear();
 
 			if (_world != null && _world.IsCreated)
@@ -105,7 +114,9 @@ namespace Utilities.HybridMono
 			}
 
 			_isInitialized = false;
+#if UNITY_EDITOR
 			Debug.Log($"[MonoHybridAPI] Disposed {WORLD_NAME}");
+#endif
 		}
 		#endregion
 
@@ -625,7 +636,7 @@ namespace Utilities.HybridMono
 		/// <returns>Enumerable of registered GameObjects.</returns>
 		public static IEnumerable<GameObject> GetRegisteredGameObjects()
 		{
-			return _gameObjectToEntity.Keys;
+			return new List<GameObject>(_gameObjectToEntity.Keys);
 		}
 
 		/// <summary>
@@ -772,9 +783,8 @@ namespace Utilities.HybridMono
 				if (index >= data.Length) break;
 				if (TryGetEntity(go, out Entity entity) && _entityManager.HasComponent<T>(entity))
 				{
-					_entityManager.SetComponentData(entity, data[index]);
+					_entityManager.SetComponentData(entity, data[index++]);
 				}
-				index++;
 			}
 		}
 

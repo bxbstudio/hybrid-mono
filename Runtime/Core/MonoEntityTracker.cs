@@ -25,12 +25,11 @@ namespace Utilities.HybridMono
             MonoHybridAPI.UnregisterGameObject(gameObject);
         }
 
-        /// <summary>
-        /// Hide this component in the inspector on reset.
-        /// </summary>
+#if UNITY_EDITOR
         private void Reset()
         {
             hideFlags = HideFlags.HideInInspector;
         }
+#endif
     }
 }
