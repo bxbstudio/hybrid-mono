@@ -7,7 +7,7 @@ namespace Utilities.HybridMono
     /// Base class for baking authoring components into ECS Entities.
     /// </summary>
     /// <typeparam name="TAuthoring">The type of the authoring MonoBehaviour.</typeparam>
-    public abstract class MonoBaker<TAuthoring> where TAuthoring : MonoBehaviour
+    public abstract class MonoBaker<TAuthoring> : IMonoBaker where TAuthoring : MonoBehaviour
     {
         #region Properties
         /// <summary>
@@ -48,6 +48,11 @@ namespace Utilities.HybridMono
             IsRebake = wasRegistered;
 
             Bake(authoring);
+        }
+
+        void IMonoBaker.BakeInternal(MonoBehaviour authoring)
+        {
+            BakeInternal((TAuthoring)authoring);
         }
         #endregion
 

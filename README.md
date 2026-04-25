@@ -83,11 +83,11 @@ public class VehicleBaker : MonoBaker<VehicleAuthoring>
 }
 ```
 
-### MonoSystem
-Base class for systems that process HybridMono entities. Provides lifecycle hooks; all component operations use `MonoHybridAPI`:
+### MonoSystem<T>
+Typed persistent base class for systems that process HybridMono entities. Each concrete system type gets its own singleton, but callers should use `MonoSystemBootstrap.GetSystem<T>()` instead of direct singleton access:
 
 ```csharp
-public class VehicleSystem : MonoSystem
+public sealed class VehicleSystem : MonoSystem<VehicleSystem>
 {
     private EntityQuery _vehicleQuery;
 
@@ -118,6 +118,8 @@ public class VehicleSystem : MonoSystem
         var buffers = MonoHybridAPI.GetBufferArray<WheelElement>(_vehicleQuery);
     }
 }
+
+var vehicleSystem = MonoSystemBootstrap.GetSystem<VehicleSystem>();
 ```
 
 ### MonoBakingSystem
@@ -141,8 +143,9 @@ public struct ApplyForcesJob : IMonoJob
     }
 }
 
-// Execute via RunMonoJob
-RunMonoJob(job, length);
+// Execute via MonoJobExtensions
+job.Run(length);
+job.RunBatched(length, batchSize: 32);
 ```
 
 ## Architecture
@@ -156,7 +159,7 @@ MonoHybridAPI.RegisterGameObject() creates Entity + MonoEntityTracker
     ↓
 Baker uses MonoHybridAPI.AddComponentData/EnsureBuffer to add data to Entity
     ↓
-MonoSystem uses MonoHybridAPI for component access and bulk export/import
+MonoSystem<T> uses MonoHybridAPI for component access and bulk export/import
     ↓
 GameObject destroyed → MonoEntityTracker.OnDestroy() → Entity destroyed
 ```
@@ -203,7 +206,7 @@ public class HealthBaker : MonoBaker<HealthAuthoring>
 }
 
 // 4. Create a system (uses MonoHybridAPI for queries and data access)
-public class HealthSystem : MonoSystem
+public sealed class HealthSystem : MonoSystem<HealthSystem>
 {
     private EntityQuery _query;
 
@@ -223,6 +226,13 @@ public class HealthSystem : MonoSystem
 // 5. Access from other scripts
 public class HealthUI : MonoBehaviour
 {
+    private HealthSystem _healthSystem;
+
+    void Awake()
+    {
+        _healthSystem = MonoSystemBootstrap.GetSystem<HealthSystem>();
+    }
+
     void Update()
     {
         if (MonoHybridAPI.TryGetComponentData<HealthData>(gameObject, out var health))
