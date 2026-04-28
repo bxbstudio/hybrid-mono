@@ -12,6 +12,7 @@ namespace Utilities.HybridMono
     /// Base class for HybridMono runtime systems.
     /// Use <see cref="MonoSystemBootstrap.GetSystem{T}"/> for external lookup.
     /// </summary>
+    [DefaultExecutionOrder(-10)]
     public abstract class MonoSystem<T> : PersistentSingleton<T> where T : MonoSystem<T>
     {
         /// <summary>
@@ -66,9 +67,20 @@ namespace Utilities.HybridMono
         }
 
         /// <summary>
+        /// Ensures the initial bake has completed before allowing frame callbacks to run.
+        /// </summary>
+        private void Start()
+        {
+            if (ToBeDestroyed)
+                return;
+
+            OnStartRunning();
+        }
+
+        /// <summary>
         /// Runs the per-frame update hook once the initial bake gate has opened.
         /// </summary>
-        protected virtual void Update()
+        private void Update()
         {
             if (!CanRunFrameCallbacks())
                 return;
@@ -82,7 +94,7 @@ namespace Utilities.HybridMono
         /// <summary>
         /// Runs the fixed-step update hook once the initial bake gate has opened.
         /// </summary>
-        protected virtual void FixedUpdate()
+        private void FixedUpdate()
         {
             if (!CanRunFrameCallbacks())
                 return;
@@ -96,7 +108,7 @@ namespace Utilities.HybridMono
         /// <summary>
         /// Runs the late update hook once the initial bake gate has opened.
         /// </summary>
-        protected virtual void LateUpdate()
+        private void LateUpdate()
         {
             if (!CanRunFrameCallbacks())
                 return;
@@ -117,13 +129,17 @@ namespace Utilities.HybridMono
 
             CompleteDependency();
             MonoSystemBootstrap.UnregisterSystem(this);
-            OnCleanup();
         }
 
         /// <summary>
         /// Called once after the persistent system instance is created.
         /// </summary>
         protected virtual void OnCreate() { }
+
+        /// <summary>
+        /// Returns true when frame callbacks are allowed to run, which requires the initial bake to have completed.
+        /// </summary>
+        protected virtual void OnStartRunning() { }
 
         /// <summary>
         /// Called every frame after the initial bake has completed.
@@ -139,11 +155,6 @@ namespace Utilities.HybridMono
         /// Called every late frame after the initial bake has completed.
         /// </summary>
         protected virtual void OnLateUpdate() { }
-
-        /// <summary>
-        /// Called during destruction after dependencies are completed and the system is unregistered.
-        /// </summary>
-        protected virtual void OnCleanup() { }
 
         /// <summary>
         /// Completes the currently tracked dependency handle.

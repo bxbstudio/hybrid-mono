@@ -305,7 +305,33 @@ namespace Utilities.HybridMono
         /// <returns>True when the component is part of a SubScene.</returns>
         private static bool IsInSubScene(MonoBehaviour component)
         {
-            return component.GetComponentInParent<SubScene>();
+            if (component == null)
+                return false;
+
+            if (component.GetComponentInParent<SubScene>())
+                return true;
+
+            Scene componentScene = component.gameObject.scene;
+
+            if (!componentScene.IsValid())
+                return false;
+
+            SubScene[] subScenes = UnityEngine.Object.FindObjectsByType<SubScene>(FindObjectsSortMode.None);
+
+            for (int i = 0; i < subScenes.Length; i++)
+            {
+                SubScene subScene = subScenes[i];
+
+                if (!subScene || !subScene.IsLoaded)
+                    continue;
+
+                Scene editingScene = subScene.EditingScene;
+
+                if (editingScene.IsValid() && editingScene.handle == componentScene.handle)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
