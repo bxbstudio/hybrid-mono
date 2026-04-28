@@ -99,10 +99,6 @@ namespace Utilities.HybridMono
             _entityManager = _world.EntityManager;
             _isInitialized = true;
 
-#if UNITY_EDITOR
-            Debug.Log($"[MonoHybridAPI] Initialized {WorldName}");
-#endif
-
             Application.quitting -= Dispose;
             Application.quitting += Dispose;
         }
@@ -126,10 +122,6 @@ namespace Utilities.HybridMono
             _world = null;
             _entityManager = default;
             _isInitialized = false;
-
-#if UNITY_EDITOR
-            Debug.Log($"[MonoHybridAPI] Disposed {WorldName}");
-#endif
         }
 
         /// <summary>

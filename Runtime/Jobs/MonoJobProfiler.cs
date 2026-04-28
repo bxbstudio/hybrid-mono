@@ -11,6 +11,6 @@ namespace Utilities.HybridMono
         /// <summary>
         /// Shared profiler marker used by the MonoJob execution helpers for this job type.
         /// </summary>
-        public static readonly ProfilerMarker Marker = new ProfilerMarker($"MonoJob<{typeof(T).Name}>.Run");
+        public static readonly ProfilerMarker Marker = new($"MonoJob<{typeof(T).Name}>.Run");
     }
 }

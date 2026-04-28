@@ -26,6 +26,9 @@ namespace Utilities.HybridMono
         }
 
 #if UNITY_EDITOR
+        /// <summary>
+        /// Ensures the component is hidden in the inspector and not accidentally modified.
+        /// </summary>
         private void Reset()
         {
             hideFlags = HideFlags.HideInInspector;

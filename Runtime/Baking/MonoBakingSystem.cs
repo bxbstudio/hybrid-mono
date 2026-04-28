@@ -90,8 +90,6 @@ namespace Utilities.HybridMono
             DiscoverBakers();
             SceneManager.sceneLoaded += OnSceneLoaded;
             _initialized = true;
-
-            Debug.Log($"[MonoBakingSystem] Initialized: {BakerCache.Count} bakers cached.");
         }
 
         /// <summary>

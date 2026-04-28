@@ -15,7 +15,7 @@ namespace Utilities.HybridMono
         /// </summary>
         /// <param name="gameObject">The GameObject to register.</param>
         /// <returns>The existing or newly created entity for the GameObject.</returns>
-        internal static Entity RegisterGameObject(GameObject gameObject)
+        public static Entity RegisterGameObject(GameObject gameObject)
         {
             EnsureInitialized();
             ValidateGameObject(gameObject);
