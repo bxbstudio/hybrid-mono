@@ -322,13 +322,19 @@ namespace Utilities.HybridMono
             {
                 SubScene subScene = subScenes[i];
 
-                if (!subScene || !subScene.IsLoaded)
+                if (!subScene
+#if UNITY_EDITOR
+                    || !subScene.IsLoaded
+#endif
+                    )
                     continue;
 
+#if UNITY_EDITOR
                 Scene editingScene = subScene.EditingScene;
 
                 if (editingScene.IsValid() && editingScene.handle == componentScene.handle)
                     return true;
+#endif
             }
 
             return false;
