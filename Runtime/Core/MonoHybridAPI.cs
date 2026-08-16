@@ -10,7 +10,7 @@ namespace Utilities.HybridMono
 	/// Central API for the HybridMono system.
 	/// Provides access to a dedicated ECS World and GameObject-Entity mapping.
 	/// </summary>
-	public static class MonoHybridAPI
+	public static partial class MonoHybridAPI
 	{
 		#region Constants
 		private const string WORLD_NAME = "HybridMono World";
