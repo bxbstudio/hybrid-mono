@@ -1,241 +1,178 @@
-# Hybrid Mono
+# Hybrid Mono System
 
-Hybrid Mono is an Entity-based architecture for Unity GameObjects. It provides a bridge between traditional MonoBehaviour-based development and the Unity ECS (Entities) system, allowing you to use proper ECS Entities with IComponentData and IBufferElementData while maintaining GameObject references.
+[![Unity Version](https://img.shields.io/badge/Unity-2022.3.62f3-blue.svg)](https://unity.com/)
+[![Package](https://img.shields.io/badge/UPM-dev.bxbstudio.hybrid--mono-blue)](https://github.com/bxbstudio/hybrid-mono)
 
-## Purpose
+Hybrid Mono System provides a lightweight bridge between Unity `GameObject` workflows and a dedicated ECS data world. It is intended for runtime systems that want ECS-style component storage, queries, and baker-driven setup while keeping the GameObject world authoritative for scene objects and engine APIs.
 
-The package creates mirror ECS Entities for GameObjects, enabling:
-- **ECS Performance**: Use `IJobEntity` with `Schedule` and `ScheduleParallel` for burst-compiled parallel processing
-- **GameObject Integration**: Access Entity data via GameObject references through `MonoHybridAPI`
-- **Automatic Lifecycle**: Entities are created during scene load and destroyed when GameObjects are destroyed
-- **Isolated World**: Dedicated "HybridMono World" keeps hybrid entities separate from standard ECS
+## Features
 
-## Core Components
-
-### MonoHybridAPI (Static Class)
-Central API for the HybridMono system. All component and buffer operations go through this static class:
-
-```csharp
-// Access the dedicated World
-World world = MonoHybridAPI.World;
-EntityManager em = MonoHybridAPI.EntityManager;
-
-// Component access via GameObject
-var data = MonoHybridAPI.GetComponentData<MyComponent>(gameObject);
-MonoHybridAPI.SetComponentData(gameObject, newData);
-MonoHybridAPI.AddComponentData(gameObject, newData);
-
-// Component access via Entity (when you already have the Entity)
-var data = MonoHybridAPI.GetComponentData<MyComponent>(entity);
-MonoHybridAPI.SetComponentData(entity, newData);
-
-// Buffer access
-var buffer = MonoHybridAPI.GetBuffer<MyBufferElement>(gameObject);
-var buffer = MonoHybridAPI.EnsureBuffer<MyBufferElement>(entity, capacity: 8);
-
-// Entity lookup
-if (MonoHybridAPI.TryGetEntity(gameObject, out Entity entity)) { }
-
-// Query creation
-EntityQuery query = MonoHybridAPI.CreateQuery(ComponentType.ReadWrite<MyComponent>());
-
-// Bulk export/import for job processing
-using var dataArray = MonoHybridAPI.GetComponentDataArray<MyComponent>(query);
-// Process in jobs...
-MonoHybridAPI.SetComponentDataArray(query, dataArray); // Write back
-
-// Bulk buffer access (modifications affect entities directly)
-var buffers = MonoHybridAPI.GetBufferArray<MyBufferElement>(query);
-
-// Enabled component support
-bool enabled = MonoHybridAPI.IsComponentEnabled<MyEnableableComponent>(gameObject);
-MonoHybridAPI.SetComponentEnabled<MyEnableableComponent>(entity, false);
-```
-
-### MonoBaker<TAuthoring>
-Base class for baking authoring MonoBehaviours into Entity components. Provides context properties; all component operations use `MonoHybridAPI`:
-
-```csharp
-public class VehicleBaker : MonoBaker<VehicleAuthoring>
-{
-    public override void Bake(VehicleAuthoring authoring)
-    {
-        // Add components via MonoHybridAPI using the Entity property
-        MonoHybridAPI.AddComponentData(Entity, new VehicleData { MaxSpeed = authoring.maxSpeed });
-
-        // Add buffers with optional capacity
-        var buffer = MonoHybridAPI.EnsureBuffer<WheelElement>(Entity, 4);
-
-        // Check if rebaking
-        if (IsRebake)
-        {
-            // Update existing data instead of resetting
-            var existing = MonoHybridAPI.GetComponentData<VehicleData>(Entity);
-            MonoHybridAPI.SetComponentData(Entity, new VehicleData {
-                MaxSpeed = authoring.maxSpeed,
-                CurrentSpeed = existing.CurrentSpeed // Preserve runtime state
-            });
-        }
-
-        // Access Unity components via GameObject property
-        var rb = GameObject.GetComponentInParent<Rigidbody>();
-    }
-}
-```
-
-### MonoSystem
-Base class for systems that process HybridMono entities. Provides lifecycle hooks; all component operations use `MonoHybridAPI`:
-
-```csharp
-public class VehicleSystem : MonoSystem
-{
-    private EntityQuery _vehicleQuery;
-
-    protected override void OnCreate()
-    {
-        _vehicleQuery = MonoHybridAPI.CreateQuery(ComponentType.ReadWrite<VehicleData>());
-    }
-
-    protected override void OnFixedUpdate()
-    {
-        // Option 1: Bulk export for job processing
-        using var dataArray = MonoHybridAPI.GetComponentDataArray<VehicleData>(_vehicleQuery);
-        // Schedule jobs with NativeArrays...
-        MonoHybridAPI.SetComponentDataArray(_vehicleQuery, dataArray); // Write back
-
-        // Option 2: Direct access via MonoHybridAPI
-        foreach (var go in MonoHybridAPI.GetRegisteredGameObjects())
-        {
-            if (MonoHybridAPI.HasComponent<VehicleData>(go))
-            {
-                var data = MonoHybridAPI.GetComponentData<VehicleData>(go);
-                data.CurrentSpeed += Time.fixedDeltaTime;
-                MonoHybridAPI.SetComponentData(go, data);
-            }
-        }
-
-        // Option 3: Get buffers for direct modification
-        var buffers = MonoHybridAPI.GetBufferArray<WheelElement>(_vehicleQuery);
-    }
-}
-```
-
-### MonoBakingSystem
-Static system that automatically discovers and executes bakers:
-- Runs at runtime when scenes load
-- Discovers all `MonoBaker<T>` implementations via reflection
-- Skips GameObjects in SubScenes (handled by standard ECS baking)
-
-### IMonoJob (Legacy Support)
-Lightweight job interface for main-thread operations:
-
-```csharp
-public struct ApplyForcesJob : IMonoJob
-{
-    public Rigidbody[] rigidbodies;
-    public Vector3[] forces;
-
-    public void Execute(int index)
-    {
-        rigidbodies[index].AddForce(forces[index]);
-    }
-}
-
-// Execute via RunMonoJob
-RunMonoJob(job, length);
-```
-
-## Architecture
-
-```
-GameObject with Authoring Component
-    ↓ Scene Load
-MonoBakingSystem discovers and executes MonoBaker<T>
-    ↓
-MonoHybridAPI.RegisterGameObject() creates Entity + MonoEntityTracker
-    ↓
-Baker uses MonoHybridAPI.AddComponentData/EnsureBuffer to add data to Entity
-    ↓
-MonoSystem uses MonoHybridAPI for component access and bulk export/import
-    ↓
-GameObject destroyed → MonoEntityTracker.OnDestroy() → Entity destroyed
-```
-
-## Key Features
-
-| Feature | Description |
-|---------|-------------|
-| **Dedicated World** | "HybridMono World" isolates hybrid entities |
-| **GameObject-Entity Mapping** | Dictionary-based O(1) lookup |
-| **Automatic Cleanup** | MonoEntityTracker handles destruction |
-| **Bulk Export/Import** | `GetComponentDataArray`/`SetComponentDataArray` for job processing |
-| **Buffer Access** | `GetBufferArray` returns DynamicBuffers for direct modification |
-| **Rebake Support** | IsRebake property detects update vs. initial bake |
-| **SubScene Detection** | Skips GameObjects in SubScenes |
-
-## Usage Example
-
-```csharp
-// 1. Define your IComponentData
-public struct HealthData : IComponentData
-{
-    public float Current;
-    public float Max;
-}
-
-// 2. Create an authoring component
-public class HealthAuthoring : MonoBehaviour
-{
-    public float maxHealth = 100f;
-}
-
-// 3. Create a baker (uses MonoHybridAPI for component operations)
-public class HealthBaker : MonoBaker<HealthAuthoring>
-{
-    public override void Bake(HealthAuthoring auth)
-    {
-        MonoHybridAPI.AddComponentData(Entity, new HealthData
-        {
-            Current = auth.maxHealth,
-            Max = auth.maxHealth
-        });
-    }
-}
-
-// 4. Create a system (uses MonoHybridAPI for queries and data access)
-public class HealthSystem : MonoSystem
-{
-    private EntityQuery _query;
-
-    protected override void OnCreate()
-    {
-        _query = MonoHybridAPI.CreateQuery(ComponentType.ReadOnly<HealthData>());
-    }
-
-    protected override void OnUpdate()
-    {
-        // Bulk export for processing
-        using var healthData = MonoHybridAPI.GetComponentDataArray<HealthData>(_query);
-        // Process...
-    }
-}
-
-// 5. Access from other scripts
-public class HealthUI : MonoBehaviour
-{
-    void Update()
-    {
-        if (MonoHybridAPI.TryGetComponentData<HealthData>(gameObject, out var health))
-        {
-            healthBar.fillAmount = health.Current / health.Max;
-        }
-    }
-}
-```
+- Dedicated Hybrid Mono ECS world created at runtime
+- `GameObject <-> Entity` registration and lookup through `MonoHybridAPI`
+- ECS component, buffer, enableable-component, and query helpers for mirrored entities
+- Runtime baker discovery with automatic scene-load bake passes through `MonoBakingSystem`
+- `MonoBaker<TAuthoring>` base class for authoring-to-entity adapters
+- Bulk read/write helpers for component arrays and buffer access
 
 ## Requirements
 
-- Unity 2022.3+
-- Entities 1.3.8+
-- Burst 1.8.18+
-- Collections 2.5.3+
+- Unity `2022.3.62f3` or later in the `2022.3` line
+- `com.unity.entities` `1.4.3`
+- `dev.bxbstudio.utilities` `1.1.11`
+
+## Installation
+
+### Using Unity Package Manager
+
+1. Open `Window > Package Manager`.
+2. Select `+ > Add package from git URL...`.
+3. Enter:
+
+```text
+https://github.com/bxbstudio/hybrid-mono.git
+```
+
+## Core APIs
+
+### `MonoHybridAPI`
+
+`MonoHybridAPI` is the main runtime surface for the Hybrid Mono world. It handles registration, entity lookup, ECS data access, and query creation for mirrored `GameObject` instances.
+
+Common capabilities include:
+
+- `RegisterGameObject()` to create or fetch the mirrored entity for a `GameObject`
+- `TryGetEntity()` / `TryGetGameObject()` for bridge lookups
+- `AddComponentData()`, `GetComponentData()`, `SetComponentData()`, and `RemoveComponent()`
+- `AddBuffer()`, `EnsureBuffer()`, `GetBuffer()`, and `RemoveBuffer()`
+- `IsComponentEnabled()` and `SetComponentEnabled()` for enableable components
+- `CreateQuery()` and bulk helpers for working with groups of entities
+
+### `MonoBakingSystem`
+
+`MonoBakingSystem` discovers concrete `MonoBaker<TAuthoring>` implementations at runtime, runs bake passes for loaded scenes, and skips authoring components inside SubScenes so Unity's ECS baking pipeline can own those objects.
+
+Useful entry points include:
+
+- `EnsureInitialBakeCompleted()`
+- `BakeAllInScene()`
+- `BakeScene()`
+- `BakeAuthoring()`
+- `HasBaker()`
+- `IsBaked()`
+
+### `MonoBaker<TAuthoring>`
+
+Derive from `MonoBaker<TAuthoring>` when you want to mirror a runtime authoring component into the Hybrid Mono world. The base class provides:
+
+- `Authoring` for the current source component
+- `GameObject` for the mirrored object
+- `Entity` for the mirrored ECS entity
+- `IsRebake` to distinguish first bake from rebake
+
+## Usage Examples
+
+### Register a `GameObject` and write component data
+
+```csharp
+using Unity.Entities;
+using UnityEngine;
+using Utilities.HybridMono;
+
+public struct Health : IComponentData
+{
+    public float Value;
+}
+
+public class HybridHealthBootstrap : MonoBehaviour
+{
+    private void Awake()
+    {
+        Entity entity = MonoHybridAPI.RegisterGameObject(gameObject);
+        MonoHybridAPI.AddComponentData(entity, new Health { Value = 100f });
+
+        Health health = MonoHybridAPI.GetComponentData<Health>(gameObject);
+        health.Value -= 10f;
+        MonoHybridAPI.SetComponentData(gameObject, health);
+    }
+}
+```
+
+### Ensure and populate a dynamic buffer
+
+```csharp
+using Unity.Entities;
+using UnityEngine;
+using Utilities.HybridMono;
+
+public struct WheelReference : IBufferElementData
+{
+    public Entity Value;
+}
+
+public class HybridWheelBufferBootstrap : MonoBehaviour
+{
+    [SerializeField] private GameObject[] wheels;
+
+    private void Awake()
+    {
+        DynamicBuffer<WheelReference> buffer =
+            MonoHybridAPI.EnsureBuffer<WheelReference>(gameObject, wheels.Length);
+
+        buffer.Clear();
+
+        foreach (GameObject wheel in wheels)
+        {
+            Entity wheelEntity = MonoHybridAPI.RegisterGameObject(wheel);
+            buffer.Add(new WheelReference { Value = wheelEntity });
+        }
+    }
+}
+```
+
+### Create a runtime baker
+
+```csharp
+using Unity.Entities;
+using UnityEngine;
+using Utilities.HybridMono;
+
+public struct VehicleTag : IComponentData {}
+
+public class VehicleAuthoring : MonoBehaviour
+{
+    public float mass = 1200f;
+}
+
+public struct VehicleMass : IComponentData
+{
+    public float Value;
+}
+
+public sealed class VehicleAuthoringBaker : MonoBaker<VehicleAuthoring>
+{
+    public override void Bake(VehicleAuthoring authoring)
+    {
+        MonoHybridAPI.AddComponentData(Entity, new VehicleTag());
+        MonoHybridAPI.AddComponentData(Entity, new VehicleMass { Value = authoring.mass });
+    }
+}
+```
+
+When the scene loads, `MonoBakingSystem` discovers the baker automatically and runs it for matching runtime authoring components outside SubScenes.
+
+## What This Package Does Not Do
+
+- It does not provide a generic physics bridge between Unity Physics and PhysX.
+- It does not synchronize transforms between GameObjects and a second simulation world.
+- It does not abstract `Rigidbody` force application into a package-level runtime pipeline.
+- It does not include higher-level `MonoSystem` infrastructure in the current package source.
+
+## Typical Use Cases
+
+- Runtime authoring adapters that mirror scene `MonoBehaviour` data into ECS entities
+- Hybrid gameplay systems that read/write ECS-style data while resolving back to `GameObject` owners
+- Packages that want shared data-oriented processing without moving all authoring into SubScenes
+
+---
+
+Developed by [BxB Studio](https://bxbstudio.dev)

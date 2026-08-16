@@ -1,15 +1,16 @@
 {
   "name": "dev.bxbstudio.hybrid-mono",
   "displayName": "Hybrid Mono System",
+  "description": "Infrastructure for running ECS-style jobs and data on GameObjects",
   "version": "1.0.0-beta.4",
   "unity": "2022.3",
   "unityRelease": "62f3",
-  "description": "Infrastructure for running ECS-style jobs and data on GameObjects",
   "dependencies": {
     "com.unity.entities": "1.4.3",
     "dev.bxbstudio.utilities": "1.1.11"
   },
-  "documentationUrl": "https://github.com/bxbstudio/hybrid-mono/blob/master/README.md",
+  "documentationUrl": "https://github.com/bxbstudio/hybrid-mono/blob/main/README.md",
+  "changelogUrl": "https://github.com/bxbstudio/hybrid-mono/blob/main/README.md",
   "author": {
     "name": "BxB Studio",
     "email": "contact@bxbstudio.dev",
